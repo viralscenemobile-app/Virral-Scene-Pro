@@ -10,8 +10,8 @@ import { formatDistanceToNow } from "date-fns";
 
 export function Notifications() {
   const { userId } = useContext(UserContext);
-  const notifications = useQuery(api.interactions.listNotifications, userId ? { userId } : "skip" as any);
-  const markAsRead = useMutation(api.interactions.markNotificationsAsRead);
+  const notifications = useQuery(api.interactions.listUserNotifications, userId ? { userId } : "skip" as any);
+  const markAsRead = useMutation(api.interactions.markAllAsRead);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -84,7 +84,7 @@ export function Notifications() {
             >
               <div className="relative flex-shrink-0">
                 <div className="w-12 h-12 rounded-full overflow-hidden border border-outline-variant/20">
-                  <img src={notification.sender?.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={notification.sender?.avatarUrl || undefined} alt="" className="w-full h-full object-cover" />
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-background flex items-center justify-center shadow-sm">
                   {getIcon(notification.type)}
@@ -102,7 +102,7 @@ export function Notifications() {
 
               {notification.creation && (
                 <div className="w-12 h-16 rounded-lg overflow-hidden flex-shrink-0 border border-outline-variant/10">
-                  <img src={notification.creation.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={notification.creation.thumbnailUrl || undefined} alt="" className="w-full h-full object-cover" />
                 </div>
               )}
               

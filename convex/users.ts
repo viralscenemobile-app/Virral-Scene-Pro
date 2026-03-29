@@ -1,6 +1,27 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+export const recalculateAll = mutation({
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    for (const user of users) {
+      const followers = await ctx.db
+        .query("follows")
+        .withIndex("by_following", (q) => q.eq("followingId", user._id))
+        .collect();
+      const following = await ctx.db
+        .query("follows")
+        .withIndex("by_follower", (q) => q.eq("followerId", user._id))
+        .collect();
+      await ctx.db.patch(user._id, {
+        followers: followers.length,
+        following: following.length,
+        coins: 0, // Reset coins as requested
+      });
+    }
+  },
+});
+
 export const get = query({
   args: { username: v.string() },
   handler: async (ctx, args) => {
@@ -37,10 +58,11 @@ export const getOrCreate = mutation({
       username: args.username,
       avatarUrl: args.avatarUrl,
       bio: "Architect of digital dreams. 🌌",
-      followers: 12800,
-      following: 432,
-      coins: 1250,
+      followers: 0,
+      following: 0,
+      coins: 0,
       verified: true,
+      role: "user",
     });
   },
 });
@@ -55,6 +77,17 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
     await ctx.db.patch(id, fields);
+  },
+});
+
+export const promoteToAdmin = mutation({
+  args: { id: v.id("users"), adminId: v.id("users") },
+  handler: async (ctx, args) => {
+    const admin = await ctx.db.get(args.adminId);
+    if (!admin || admin.role !== "admin") {
+      throw new Error("Unauthorized: Only admins can promote users");
+    }
+    await ctx.db.patch(args.id, { role: "admin" });
   },
 });
 

@@ -1,9 +1,51 @@
-import { Search, Play, ChevronRight, Verified, Sparkles, Loader2, Zap } from "lucide-react";
+import { Search, Play, ChevronRight, Verified, Sparkles, Loader2, Zap, UserPlus, UserCheck } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
+import { UserContext } from "../App";
+import { Id } from "../../convex/_generated/dataModel";
+
+function FollowButton({ creatorId }: { creatorId: Id<"users"> }) {
+  const { userId } = useContext(UserContext);
+  const isFollowing = useQuery(api.interactions.checkFollow, userId ? { followerId: userId, followingId: creatorId } : "skip" as any);
+  const toggleFollow = useMutation(api.interactions.toggleFollow);
+
+  const handleFollow = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!userId) return;
+    try {
+      await toggleFollow({ followerId: userId, followingId: creatorId });
+    } catch (e) {
+      console.error("Follow failed", e);
+    }
+  };
+
+  if (userId === creatorId) return null;
+
+  return (
+    <button 
+      onClick={handleFollow}
+      className={cn(
+        "mt-1 px-3 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1",
+        isFollowing ? "bg-surface-container-highest text-on-surface-variant" : "bg-primary text-background"
+      )}
+    >
+      {isFollowing ? (
+        <>
+          <UserCheck className="w-3 h-3" />
+          Following
+        </>
+      ) : (
+        <>
+          <UserPlus className="w-3 h-3" />
+          Follow
+        </>
+      )}
+    </button>
+  );
+}
 
 const CREATORS = [
   { id: 1, name: "@nebula_edit", image: "https://lh3.googleusercontent.com/aida-public/AB6AXuCfkGWiteYlN-JlMpX-PDG3AgquQ6No-ruEf_Ze7eHaLT9ZHUf60-UhPdjv43zs_5g8SOiIE6YA4Y_9-SBumiLc3vHI5-pYeui-3qdq5PJMhssJIhsOAdmQTEtFj9Gy9ZKwgShY89bF28kE6WfszHczoR8nfWon0SG1LjDdXFKPJMv77hPWd0-_xRqyydx51AaRwWvncd-x8Q34bY1RTntKkxaMbHDGZRUzRpcEQoyD-jJ5Y3HatxhSSWczKWsY4hWQW-dZGiqU4f8", gradient: "from-primary to-secondary" },
@@ -28,10 +70,10 @@ export function Discover() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const trendingCreations = useQuery(api.creations.list);
+  const trendingCreations = useQuery(api.creations.list, {});
   const searchResults = useQuery(api.creations.search, debouncedQuery ? { query: debouncedQuery } : "skip" as any);
   const activeChallenges = useQuery(api.challenges.listActive);
-  const templates = useQuery(api.creations.listTemplates);
+  const templates = useQuery(api.creations.listTemplates, {});
   const realCreators = useQuery(api.users.listCreators, { limit: 10 });
 
   const creationsToDisplay = debouncedQuery ? searchResults : trendingCreations;
@@ -82,7 +124,7 @@ export function Discover() {
                 className="relative h-48 rounded-2xl overflow-hidden group cursor-pointer"
                 onClick={() => navigate(`/studio?challengeId=${challenge._id}`)}
               >
-                <img src={challenge.imageUrl} alt={challenge.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                <img src={challenge.imageUrl || undefined} alt={challenge.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-6 flex flex-col justify-end">
                   <div className="flex justify-between items-end">
                     <div>
@@ -120,8 +162,8 @@ export function Discover() {
                 onClick={() => navigate(`/studio?prompt=${encodeURIComponent(template.prompt)}&style=${template.style}&templateId=${template._id}`)}
                 className="flex-none w-40 space-y-2 group cursor-pointer"
               >
-                <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-lg border border-outline-variant/10">
-                  <img src={template.thumbnailUrl} alt={template.prompt} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-lg border border-outline-variant/10 bg-surface-container-high flex items-center justify-center">
+                  <Sparkles className="w-8 h-8 text-on-surface-variant/20" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-3">
                     <div className="flex items-center gap-1 text-[10px] font-bold text-white">
                       <Zap className="w-3 h-3 fill-current text-primary" />
@@ -154,16 +196,21 @@ export function Discover() {
               <div 
                 key={creator._id} 
                 className="flex-shrink-0 w-32 flex flex-col items-center gap-2 cursor-pointer group"
-                onClick={() => navigate(`/profile?username=${creator.username}`)}
               >
-                <div className={cn("w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-primary to-secondary")}>
+                <div 
+                  onClick={() => navigate(`/profile?username=${creator.username}`)}
+                  className={cn("w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-primary to-secondary")}
+                >
                   <img 
-                    src={creator.avatarUrl} 
+                    src={creator.avatarUrl || undefined} 
                     alt={creator.username} 
                     className="w-full h-full rounded-full object-cover border-4 border-background group-hover:scale-105 transition-transform" 
                   />
                 </div>
-                <span className="text-xs font-label text-center font-medium truncate w-full">@{creator.username}</span>
+                <div className="flex flex-col items-center w-full">
+                  <span className="text-xs font-label text-center font-medium truncate w-full">@{creator.username}</span>
+                  <FollowButton creatorId={creator._id} />
+                </div>
               </div>
             ))}
             {!realCreators && (
@@ -187,7 +234,7 @@ export function Discover() {
               className="relative rounded-2xl overflow-hidden group cursor-pointer"
             >
               <img 
-                src={CATEGORIES[0].image} 
+                src={CATEGORIES[0].image || undefined} 
                 alt="Cinematic" 
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
               />
@@ -201,7 +248,7 @@ export function Discover() {
                 className="relative rounded-2xl overflow-hidden group cursor-pointer"
               >
                 <img 
-                  src={CATEGORIES[1].image} 
+                  src={CATEGORIES[1].image || undefined} 
                   alt="Anime" 
                   className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
                 />
@@ -214,7 +261,7 @@ export function Discover() {
                 className="relative rounded-2xl overflow-hidden group cursor-pointer"
               >
                 <img 
-                  src={CATEGORIES[2].image} 
+                  src={CATEGORIES[2].image || undefined} 
                   alt="Comedy" 
                   className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
                 />
@@ -240,18 +287,14 @@ export function Discover() {
                 <div 
                   key={creation._id} 
                   onClick={() => navigate(`/feed?id=${creation._id}`)}
-                  className="relative rounded-2xl overflow-hidden glass-panel group break-inside-avoid cursor-pointer"
+                  className="relative rounded-2xl overflow-hidden glass-panel group break-inside-avoid cursor-pointer bg-surface-container-high aspect-[3/4] flex items-center justify-center"
                 >
-                  <img 
-                    src={creation.thumbnailUrl} 
-                    alt={creation.prompt} 
-                    className={cn("w-full object-cover aspect-[3/4]")} 
-                  />
+                  <Sparkles className="w-8 h-8 text-on-surface-variant/20" />
                   <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-md px-2 py-1 rounded-lg flex items-center gap-1">
                     <Play className="w-3 h-3 text-secondary fill-current" />
                     <span className="text-[10px] font-label font-bold text-on-surface">{(creation.views / 1000).toFixed(1)}K</span>
                   </div>
-                  <div className="p-3 bg-gradient-to-t from-black to-transparent">
+                  <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black to-transparent">
                     <p className="text-xs font-medium text-on-surface truncate">{creation.prompt}</p>
                   </div>
                 </div>

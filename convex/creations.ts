@@ -94,8 +94,10 @@ export const listBookmarked = query({
 });
 
 export const create = mutation({
+  // Force re-compile
   args: {
     userId: v.id("users"),
+    title: v.optional(v.string()),
     prompt: v.string(),
     style: v.string(),
     videoUrl: v.string(),
@@ -107,6 +109,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const creationId = await ctx.db.insert("creations", {
       ...args,
+      title: args.title || "Untitled",
       views: 0,
       likes: 0,
       comments: 0,

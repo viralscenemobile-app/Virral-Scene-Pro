@@ -4,11 +4,13 @@ import React, { useState, useContext, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
 import { moderateContent, enhancePrompt } from "@/src/lib/gemini";
-import { generateVideo, generateImage, generateVideoFromImage } from "@/src/lib/fal";
+import { generateVideo, generateImage, generateVideoFromImage } from "@/src/lib/gemini";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { UserContext } from "../App";
 import { getUploadUrl, getPublicUrl } from "@/src/lib/r2";
+
+import { toast } from "sonner";
 
 const STYLES = [
   { id: "cinematic", name: "Cinematic", image: "https://lh3.googleusercontent.com/aida-public/AB6AXuAg2-t88NeuqjFvHs9G8tqNzuK6nfsnzLizR_udhqdRdVeQfZejosYOYAOqQiNaASBk7B4R1z9eZfWCZjY-iEEDOOm7BwxWpH_Yut_yDAuoNZ0oOAcrFFMlCwvhHkyiUa7CQtXgdzmCJF1UIsM9ZPx4yd-3X7WegMKAqjN_pSdfhWdBCxxbBDAUspZl3iq7HOr-ED3ehfeVwgcjI_wrbbbaGoWPAAkBEDQUAe-ORfUhwdoE9_6HlMzF2fj3WSGA5GG8Qr69UTXY2io" },
@@ -24,18 +26,21 @@ const COSTS = {
   "direct-upload": 0,
 };
 
+const DURATIONS = ["3s", "5s", "10s"];
+
 export function Studio() {
   const { userId } = useContext(UserContext);
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"text-to-video" | "text-to-image" | "image-to-video" | "direct-upload">("text-to-video");
   const [selectedStyle, setSelectedStyle] = useState("cinematic");
   const [prompt, setPrompt] = useState("");
+  const [title, setTitle] = useState("");
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16" | "1:1">("9:16");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
-  const [duration, setDuration] = useState<string | null>("5 Seconds (Ultra)");
+  const [duration, setDuration] = useState<string | null>("5s");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<string | null>(null);
   const [hasApiKey, setHasApiKey] = useState(false);
@@ -43,6 +48,31 @@ export function Studio() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const generateThumbnail = async (videoBlob: Blob): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(videoBlob);
+      video.muted = true;
+      video.onloadedmetadata = () => {
+        video.currentTime = 1; // Seek to 1 second
+      };
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("Failed to generate thumbnail"));
+          URL.revokeObjectURL(video.src);
+        }, 'image/jpeg');
+      };
+      video.onerror = reject;
+      video.load();
+    });
+  };
   
   const user = useQuery(api.users.getById, userId ? { id: userId } : "skip" as any);
   const createCreation = useMutation(api.creations.create);
@@ -91,9 +121,9 @@ export function Studio() {
     setIsClaiming(true);
     try {
       await claimDailyReward({ id: userId });
-      alert("Claimed 10 coins! Come back tomorrow for more.");
+      toast.success("Claimed 10 coins! Come back tomorrow for more.");
     } catch (e: any) {
-      alert(e.message || "Failed to claim reward");
+      toast.error(e.message || "Failed to claim reward");
     } finally {
       setIsClaiming(false);
     }
@@ -113,23 +143,23 @@ export function Studio() {
     if (!userId || isGenerating) return;
     
     if (activeTab === "image-to-video" && !selectedImage) {
-      alert("Please select an image first");
+      toast.error("Please select an image first");
       return;
     }
     
     if (activeTab === "direct-upload" && !selectedImage && !selectedVideo) {
-      alert("Please select an image or video first");
+      toast.error("Please select an image or video first");
       return;
     }
     
     if (activeTab !== "image-to-video" && activeTab !== "direct-upload" && !prompt) {
-      alert("Please enter a prompt");
+      toast.error("Please enter a prompt");
       return;
     }
 
     const cost = COSTS[activeTab];
     if (!user || user.coins < cost) {
-      alert(`Insufficient coins! You need ${cost} coins.`);
+      toast.error(`Insufficient coins! You need ${cost} coins.`);
       return;
     }
 
@@ -140,7 +170,7 @@ export function Studio() {
       if (prompt) {
         const isSafe = await moderateContent(prompt);
         if (!isSafe) {
-          alert("Your prompt violates our safety guidelines. Please modify it and try again.");
+          toast.error("Your prompt violates our safety guidelines. Please modify it and try again.");
           setIsGenerating(false);
           return;
         }
@@ -191,7 +221,20 @@ export function Studio() {
       });
 
       const publicUrl = getPublicUrl(fileName);
-      const placeholderThumb = activeTab === "text-to-image" || activeTab === "direct-upload" && mimeType.startsWith("image/") ? publicUrl : "https://picsum.photos/seed/viral/400/600";
+      
+      let thumbPublicUrl = publicUrl;
+      if (mimeType.startsWith("video/")) {
+        setGenerationStep("Generating thumbnail...");
+        const thumbBlob = await generateThumbnail(resultBlob);
+        const thumbFileName = `thumb-${Date.now()}.jpg`;
+        const thumbUploadUrl = await getUploadUrl(thumbFileName, "image/jpeg");
+        await fetch(thumbUploadUrl, {
+          method: "PUT",
+          body: thumbBlob,
+          headers: { "Content-Type": "image/jpeg" },
+        });
+        thumbPublicUrl = getPublicUrl(thumbFileName);
+      }
 
       // 4. Save to Convex
       setGenerationStep("Finalizing...");
@@ -199,15 +242,16 @@ export function Studio() {
       
       await createCreation({
         userId,
-        prompt: prompt || "Direct Upload",
+        title: title || "Untitled",
+        prompt: activeTab === "direct-upload" ? "Direct Upload" : (prompt || "Untitled Creation"),
         style: selectedStyle,
         videoUrl: (activeTab === "text-to-image" || (activeTab === "direct-upload" && mimeType.startsWith("image/"))) ? "" : publicUrl,
-        thumbnailUrl: placeholderThumb,
+        thumbnailUrl: thumbPublicUrl,
         isTemplate: false,
         ...(challengeId ? { challengeId: challengeId as any } : {}),
       });
 
-      alert("Success! Your creation is ready.");
+      toast.success("Success! Your creation is ready.");
       setPrompt("");
       setSelectedImage(null);
       setImagePreview(null);
@@ -217,9 +261,9 @@ export function Studio() {
       console.error("Generation failed:", e);
       if (e.message?.includes("Requested entity was not found")) {
         setHasApiKey(false);
-        alert("API key error. Please select your key again.");
+        toast.error("API key error. Please select your key again.");
       } else {
-        alert("Failed: " + e.message);
+        toast.error("Failed: " + e.message);
       }
     } finally {
       setIsGenerating(false);
@@ -232,59 +276,70 @@ export function Studio() {
   return (
     <main className="relative min-h-screen pt-20 pb-24 overflow-hidden px-6">
       {/* Background */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-secondary/10 rounded-full blur-[100px]"></div>
-      </div>
+      <div className="absolute inset-0 -z-10 bg-background" />
 
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* User Stats Banner */}
+        {/* User Stats Banner - Premium Redesign */}
         <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col sm:flex-row items-center justify-between bg-surface-container-low p-5 rounded-2xl border border-outline-variant/10 shadow-sm gap-4"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-surface-container-low via-surface-container-low to-surface-container-high p-6 sm:p-8"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Coins className="text-primary w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface/40">Balance</p>
-              <p className="font-headline font-bold text-2xl text-on-surface">{user?.coins ?? "..."} <span className="text-xs font-medium text-on-surface/40 ml-1">Coins</span></p>
-            </div>
-          </div>
+          {/* Decorative Elements */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-secondary/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/3 pointer-events-none" />
           
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {canClaim && (
-              <button 
-                onClick={handleClaimDaily}
-                disabled={isClaiming}
-                className="flex-1 sm:flex-none px-4 py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary rounded-xl text-xs font-bold uppercase tracking-tight transition-colors disabled:opacity-50"
-              >
-                {isClaiming ? "Claiming..." : "Daily Reward"}
+          <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="bg-primary/20 p-1.5 rounded-lg">
+                  <Coins className="text-primary w-4 h-4" />
+                </div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface/60">Available Balance</p>
+              </div>
+              <div className="flex items-baseline gap-2 pt-1">
+                <span className="font-black text-4xl text-on-surface tracking-tighter">
+                  {user?.coins?.toLocaleString() ?? "0,000"}
+                </span>
+                <span className="text-xs font-bold text-primary uppercase tracking-widest">Coins</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              {canClaim && (
+                <button 
+                  onClick={handleClaimDaily}
+                  disabled={isClaiming}
+                  className="flex-1 sm:flex-none px-6 py-3.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded-2xl text-[11px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-50 active:scale-95"
+                >
+                  {isClaiming ? "Processing..." : "Claim Daily"}
+                </button>
+              )}
+              <button className="flex-1 sm:flex-none px-6 py-3.5 bg-primary text-on-primary rounded-2xl text-[11px] font-bold uppercase tracking-[0.1em] shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-95">
+                Add Coins
               </button>
-            )}
-            <button className="flex-1 sm:flex-none px-4 py-2 bg-primary text-on-primary rounded-xl text-xs font-bold uppercase tracking-tight hover:opacity-90 transition-opacity">
-              Get More
-            </button>
+            </div>
           </div>
         </motion.div>
 
-        {/* Generation Banner */}
-        <div className="bg-surface-container-high/50 border border-outline-variant/10 p-4 rounded-2xl flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Zap className="text-primary w-4 h-4" />
+        {/* Generation Banner - Simplified & Professional */}
+        <div className="bg-surface-container-low p-4 rounded-2xl flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-surface-container-high flex items-center justify-center">
+              <Zap className="text-secondary w-5 h-5" />
             </div>
             <div>
-              <p className="font-headline text-sm font-bold text-on-surface">Pro Engine Active</p>
-              <p className="font-label text-[10px] text-on-surface/40 uppercase tracking-widest">fal.ai v2.0 • Cinematic</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold text-on-surface tracking-tight">System Status</p>
+                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-[8px] font-bold text-primary uppercase tracking-widest">Active</span>
+              </div>
+              <p className="text-[9px] text-on-surface/40 uppercase tracking-[0.1em]">Cinematic Engine • Low Latency</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 rounded-full">
-            <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-            <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Ready</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-lg">
+            <div className="h-1.5 w-1.5 rounded-full bg-secondary"></div>
+            <span className="text-[9px] font-bold text-on-surface/60 uppercase tracking-[0.2em]">Ready</span>
           </div>
         </div>
 
@@ -347,14 +402,14 @@ export function Studio() {
           >
             {activeTab === "image-to-video" && (
               <section className="space-y-4">
-                <label className="block text-primary text-xs font-label uppercase tracking-widest font-bold">Source Image</label>
+                <label className="block text-primary text-xs font-bold uppercase tracking-widest">Source Image</label>
                 <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="relative aspect-video rounded-2xl border-2 border-dashed border-outline-variant/20 bg-surface-container-low flex flex-col items-center justify-center cursor-pointer hover:bg-surface-container-high transition-all overflow-hidden group"
+                  className="relative aspect-video rounded-2xl bg-surface-container-low flex flex-col items-center justify-center cursor-pointer hover:bg-surface-container-high transition-all overflow-hidden group"
                 >
                   {imagePreview ? (
                     <>
-                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      <img src={imagePreview || undefined} alt="Preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                         <Upload className="text-white w-8 h-8" />
                       </div>
@@ -362,7 +417,7 @@ export function Studio() {
                   ) : (
                     <>
                       <Upload className="text-on-surface/20 w-10 h-10 mb-2" />
-                      <p className="text-on-surface/40 font-label text-sm">Click to upload image</p>
+                      <p className="text-on-surface/40 text-sm">Click to upload image</p>
                     </>
                   )}
                   <input 
@@ -378,15 +433,15 @@ export function Studio() {
 
             {activeTab === "direct-upload" && (
               <section className="space-y-4">
-                <label className="block text-primary text-xs font-label uppercase tracking-widest font-bold">Upload Media</label>
+                <label className="block text-primary text-xs font-bold uppercase tracking-widest">Upload Media</label>
                 <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="relative aspect-video rounded-2xl border-2 border-dashed border-outline-variant/20 bg-surface-container-low flex flex-col items-center justify-center cursor-pointer hover:bg-surface-container-high transition-all overflow-hidden group"
+                  className="relative aspect-video rounded-2xl bg-surface-container-low flex flex-col items-center justify-center cursor-pointer hover:bg-surface-container-high transition-all overflow-hidden group"
                 >
                   {imagePreview || videoPreview ? (
                     <>
-                      {imagePreview && <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />}
-                      {videoPreview && <video src={videoPreview} className="w-full h-full object-cover" />}
+                      {imagePreview && <img src={imagePreview || undefined} alt="Preview" className="w-full h-full object-cover" />}
+                      {videoPreview && <video src={videoPreview || undefined} className="w-full h-full object-cover" />}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                         <Upload className="text-white w-8 h-8" />
                       </div>
@@ -394,7 +449,7 @@ export function Studio() {
                   ) : (
                     <>
                       <Upload className="text-on-surface/20 w-10 h-10 mb-2" />
-                      <p className="text-on-surface/40 font-label text-sm">Click to upload image/video</p>
+                      <p className="text-on-surface/40 text-sm">Click to upload image/video</p>
                     </>
                   )}
                   <input 
@@ -447,39 +502,50 @@ export function Studio() {
               </section>
             )}
 
+            {/* Title Input */}
+            <section className="space-y-4">
+              <div className="bg-surface-container-low rounded-2xl p-6 space-y-4">
+                <label className="block text-primary text-[10px] font-bold uppercase tracking-[0.2em]">Title</label>
+                <input 
+                  type="text"
+                  className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-lg placeholder:text-on-surface/20"
+                  placeholder="Give your creation a title..."
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+            </section>
+
             {/* Prompt Input */}
             {activeTab !== "direct-upload" && (
               <section className="space-y-4">
-                <div className="relative group">
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-secondary opacity-20 group-focus-within:opacity-40 rounded-[2rem] transition-all blur-sm"></div>
-                  <div className="relative bg-surface-container-high rounded-lg p-6 space-y-4 shadow-2xl">
-                    <label className="block text-primary text-xs font-label uppercase tracking-widest font-bold">
-                      {activeTab === "image-to-video" ? "Animation Instructions (Optional)" : "Creative Directive"}
-                    </label>
-                    <textarea 
-                      className="w-full bg-transparent border-none focus:ring-0 text-xl font-body placeholder:text-on-surface/20 resize-none leading-relaxed" 
-                      placeholder={activeTab === "image-to-video" ? "How should the image move?" : "Describe your scene in cinematic detail..."} 
-                      rows={4}
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                    />
-                    <div className="flex justify-between items-center pt-2">
-                      <button 
-                        onClick={handleEnhance}
-                        disabled={isEnhancing || !prompt}
-                        className="flex items-center gap-2 px-4 py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary rounded-full transition-all group/btn disabled:opacity-50"
-                      >
-                        {isEnhancing ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
-                        )}
-                        <span className="font-label text-xs font-bold tracking-tight">
-                          {isEnhancing ? "ENHANCING..." : "AI ENHANCE (Gemini)"}
-                        </span>
-                      </button>
-                      <span className="text-on-surface/30 font-label text-xs">{prompt.length} / 500</span>
-                    </div>
+                <div className="bg-surface-container-low rounded-2xl p-6 space-y-4">
+                  <label className="block text-primary text-[10px] font-bold uppercase tracking-[0.2em]">
+                    {activeTab === "image-to-video" ? "Animation Instructions (Optional)" : "Prompt"}
+                  </label>
+                  <textarea 
+                    className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-lg placeholder:text-on-surface/20 resize-none leading-relaxed" 
+                    placeholder={activeTab === "image-to-video" ? "How should the image move?" : "Describe what you want to create..."} 
+                    rows={4}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                  />
+                  <div className="flex justify-between items-center pt-2">
+                    <button 
+                      onClick={handleEnhance}
+                      disabled={isEnhancing || !prompt}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest text-secondary rounded-xl transition-all group/btn disabled:opacity-50"
+                    >
+                      {isEnhancing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
+                      )}
+                      <span className="text-[10px] font-bold uppercase tracking-wider">
+                        {isEnhancing ? "ENHANCING..." : "AI ENHANCE"}
+                      </span>
+                    </button>
+                    <span className="text-on-surface/30 text-[10px]">{prompt.length} / 500</span>
                   </div>
                 </div>
               </section>
@@ -487,12 +553,12 @@ export function Studio() {
           </motion.div>
         </AnimatePresence>
 
-        {/* Visual Dimension */}
+        {/* Art Style */}
         {activeTab !== "direct-upload" && (
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-headline text-lg font-bold text-on-surface">Visual Dimension</h3>
-              <button className="text-secondary text-sm font-medium font-label flex items-center gap-1">
+              <h3 className="text-lg font-bold text-on-surface">Art Style</h3>
+              <button className="text-secondary text-sm font-medium flex items-center gap-1">
                 View All <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -505,18 +571,18 @@ export function Studio() {
                 >
                   <div className={cn(
                     "relative aspect-[4/5] rounded-xl overflow-hidden transition-all duration-300",
-                    selectedStyle === style.id ? "ring-2 ring-secondary ring-offset-4 ring-offset-background" : "ring-1 ring-white/10 opacity-70 hover:opacity-100"
+                    selectedStyle === style.id ? "scale-105" : "opacity-70 hover:opacity-100"
                   )}>
-                    <img src={style.image} alt={style.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                    <img src={style.image || undefined} alt={style.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent"></div>
                     {selectedStyle === style.id && (
-                      <div className="absolute bottom-2 left-2 right-2 flex justify-center">
-                        <CheckCircle2 className="text-secondary w-5 h-5 fill-current" />
+                      <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+                        <CheckCircle2 className="text-white w-6 h-6 fill-primary" />
                       </div>
                     )}
                   </div>
                   <p className={cn(
-                    "text-center font-label text-xs",
+                    "text-center text-xs",
                     selectedStyle === style.id ? "font-bold text-on-surface" : "font-medium text-on-surface/50"
                   )}>{style.name}</p>
                 </div>
@@ -525,15 +591,15 @@ export function Studio() {
           </section>
         )}
 
-        {/* Technical Controls */}
+        {/* Settings */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-4 bg-surface-container-low rounded-lg flex items-center justify-between group cursor-pointer hover:bg-surface-container-high transition-colors">
             <div className="flex items-center gap-3">
               <Maximize className="text-primary w-5 h-5" />
               <div>
-                <p className="font-headline text-sm font-bold">Aspect Ratio</p>
+                <p className="text-sm font-bold">Aspect Ratio</p>
                 {activeTab === "direct-upload" ? (
-                  <p className="font-label text-xs text-on-surface/40">{aspectRatio}</p>
+                  <p className="text-xs text-on-surface/40">{aspectRatio}</p>
                 ) : (
                   <div className="flex gap-2 mt-1">
                     {["16:9", "9:16", "1:1"].map((ratio) => (
@@ -542,7 +608,7 @@ export function Studio() {
                         onClick={() => setAspectRatio(ratio as any)}
                         className={cn(
                           "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter",
-                          aspectRatio === ratio ? "bg-primary text-on-primary" : "bg-primary/10 text-primary"
+                          aspectRatio === ratio ? "bg-primary text-on-primary" : "bg-surface-container-high text-on-surface/50"
                         )}
                       >
                         {ratio}
@@ -553,16 +619,34 @@ export function Studio() {
               </div>
             </div>
           </div>
-          <div className="p-4 bg-surface-container-low rounded-lg flex items-center justify-between group cursor-pointer hover:bg-surface-container-high transition-colors">
-            <div className="flex items-center gap-3">
-              <Timer className="text-primary w-5 h-5" />
-              <div>
-                <p className="font-headline text-sm font-bold">Duration</p>
-                <p className="font-label text-xs text-on-surface/40">{duration}</p>
+          {activeTab !== "text-to-image" && (
+            <div className="p-4 bg-surface-container-low rounded-lg flex items-center justify-between group cursor-pointer hover:bg-surface-container-high transition-colors">
+              <div className="flex items-center gap-3">
+                <Timer className="text-primary w-5 h-5" />
+                <div>
+                  <p className="text-sm font-bold">Duration</p>
+                  {activeTab === "direct-upload" ? (
+                    <p className="text-xs text-on-surface/40">{duration}</p>
+                  ) : (
+                    <div className="flex gap-2 mt-1">
+                      {DURATIONS.map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => setDuration(d)}
+                          className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter",
+                            duration === d ? "bg-primary text-on-primary" : "bg-surface-container-high text-on-surface/50"
+                          )}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            {activeTab !== "direct-upload" && <ChevronRight className="text-on-surface/20 w-5 h-5" />}
-          </div>
+          )}
         </section>
 
         {/* Generate Button */}
@@ -575,7 +659,7 @@ export function Studio() {
               (activeTab === "image-to-video" && !selectedImage) || 
               (activeTab === "direct-upload" && !selectedImage && !selectedVideo)
             }
-            className="w-full py-5 rounded-full bg-gradient-to-r from-primary to-primary-dim text-on-primary font-headline text-lg font-extrabold shadow-[0_8px_32px_rgba(182,160,255,0.3)] flex items-center justify-center gap-3 disabled:opacity-50"
+            className="w-full py-5 rounded-full bg-primary text-on-primary text-lg font-bold flex items-center justify-center gap-3 disabled:opacity-50"
           >
             {isGenerating ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -584,7 +668,7 @@ export function Studio() {
             )}
             {isGenerating ? generationStep : (activeTab === "direct-upload" ? "Upload" : `Generate (${COSTS[activeTab]} Coins)`)}
           </motion.button>
-          <p className="text-center mt-4 font-label text-xs text-on-surface/30">
+          <p className="text-center mt-4 text-xs text-on-surface/30">
             Average generation time: <span className="text-secondary">120s</span>
           </p>
         </div>

@@ -39,10 +39,13 @@ export interface FirestoreErrorInfo {
   }
 }
 
+console.log("Firebase: Initializing with config for project:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
+
+console.log("Firebase: Auth and Firestore initialized.");
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
@@ -75,13 +78,17 @@ export { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfi
 import { doc, getDocFromServer } from "firebase/firestore";
 
 async function testConnection() {
+  console.log("Firebase: Testing Firestore connection...");
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
+    console.log("Firebase: Firestore connection test successful.");
   } catch (error) {
     if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. ");
+      console.error("Firebase: Firestore connection failed - client is offline. Check config/network.");
     }
     // Skip logging for other errors, as this is simply a connection test.
   }
 }
-testConnection();
+
+// Run connection test in background
+setTimeout(testConnection, 1000);

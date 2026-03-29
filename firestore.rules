@@ -23,6 +23,7 @@ service cloud.firestore {
     // Document ID: creationId
     // Fields:
     //   - userId: string (required, immutable)
+    //   - title: string (required)
     //   - prompt: string (required)
     //   - style: string (required)
     //   - videoUrl: string (required)
@@ -100,8 +101,9 @@ service cloud.firestore {
     }
 
     function isValidCreation(data) {
-      return hasRequiredFields(['userId', 'prompt', 'style', 'videoUrl', 'thumbnailUrl', 'views', 'likes', 'comments', 'isTemplate', 'createdAt']) &&
+      return hasRequiredFields(['userId', 'title', 'prompt', 'style', 'videoUrl', 'thumbnailUrl', 'views', 'likes', 'comments', 'isTemplate', 'createdAt']) &&
              data.userId is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
              data.prompt is string && data.prompt.size() > 0 && data.prompt.size() <= 1000 &&
              data.style is string &&
              data.videoUrl is string && isValidUrl(data.videoUrl) &&
@@ -133,16 +135,7 @@ service cloud.firestore {
       allow update: if (isDocOwner() && isValidCreation(request.resource.data) && 
                        request.resource.data.userId == resource.data.userId &&
                        request.resource.data.createdAt == resource.data.createdAt) || 
-                       isAdmin() ||
-                       // Allow incrementing views/likes from anyone authenticated
-                       (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views', 'likes', 'comments']));
-    }
-
-    // Challenges collection
-    match /challenges/{challengeId} {
-      allow read: if true;
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+                       isAdmin();
     }
 
     // Default deny

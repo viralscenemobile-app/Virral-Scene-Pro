@@ -12,12 +12,14 @@ export default defineSchema({
     coins: v.number(),
     verified: v.boolean(),
     lastRewardClaimedAt: v.optional(v.number()),
+    role: v.string(),
   })
     .index("by_firebase_uid", ["firebaseUid"])
     .index("by_username", ["username"]),
 
   creations: defineTable({
     userId: v.id("users"),
+    title: v.optional(v.string()),
     prompt: v.string(),
     style: v.string(),
     videoUrl: v.string(),

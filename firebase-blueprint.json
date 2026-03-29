@@ -13,9 +13,10 @@
         "following": { "type": "number", "description": "Number of users followed" },
         "coins": { "type": "number", "description": "User's virtual currency balance" },
         "verified": { "type": "boolean", "description": "Whether the user is verified" },
-        "lastRewardClaimedAt": { "type": "number", "description": "Timestamp of last reward claim" }
+        "lastRewardClaimedAt": { "type": "number", "description": "Timestamp of last reward claim" },
+        "role": { "type": "string", "description": "User role (user/admin)" }
       },
-      "required": ["firebaseUid", "username", "avatarUrl", "followers", "following", "coins", "verified"]
+      "required": ["firebaseUid", "username", "avatarUrl", "followers", "following", "coins", "verified", "role"]
     },
     "Creation": {
       "title": "Creation",
@@ -23,6 +24,7 @@
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "ID of the creator" },
+        "title": { "type": "string", "description": "Title of the creation" },
         "prompt": { "type": "string", "description": "AI prompt used" },
         "style": { "type": "string", "description": "Visual style" },
         "videoUrl": { "type": "string", "description": "URL to the video file" },
@@ -35,7 +37,7 @@
         "challengeId": { "type": "string", "description": "ID of the challenge (if any)" },
         "createdAt": { "type": "number", "description": "Creation timestamp" }
       },
-      "required": ["userId", "prompt", "style", "videoUrl", "thumbnailUrl", "views", "likes", "comments", "isTemplate", "createdAt"]
+      "required": ["userId", "title", "prompt", "style", "videoUrl", "thumbnailUrl", "views", "likes", "comments", "isTemplate", "createdAt"]
     },
     "Challenge": {
       "title": "Challenge",

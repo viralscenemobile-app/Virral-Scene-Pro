@@ -141,6 +141,14 @@ export async function generateImage(prompt: string, aspectRatio: "1:1" | "16:9" 
 
 export async function generateVideoFromImage(imageBlob: Blob, prompt?: string, aspectRatio: "16:9" | "9:16" = "9:16") {
   const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  
+  if (!process.env.API_KEY) {
+    console.warn("No paid API key found. Using mock video for free tier.");
+    const placeholderVideoUrl = "https://cdn.pixabay.com/video/2023/10/20/185836-876388911_large.mp4";
+    const response = await fetch(placeholderVideoUrl);
+    return await response.blob();
+  }
+
   const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
   const reader = new FileReader();

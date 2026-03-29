@@ -16,6 +16,15 @@ export const listActive = query({
   },
 });
 
+export const listPast = query({
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("challenges")
+      .withIndex("by_status", (q) => q.eq("status", "completed"))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     title: v.string(),

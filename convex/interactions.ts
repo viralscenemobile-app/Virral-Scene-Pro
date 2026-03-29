@@ -219,7 +219,7 @@ export const checkFollow = query({
 });
 
 // Notifications
-export const listNotifications = query({
+export const listUserNotifications = query({
   args: { userId: v.id("users"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const notifications = await ctx.db
@@ -240,7 +240,7 @@ export const listNotifications = query({
   },
 });
 
-export const getUnreadCount = query({
+export const getUnreadNotificationsCount = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const unread = await ctx.db
@@ -251,7 +251,7 @@ export const getUnreadCount = query({
   },
 });
 
-export const markNotificationsAsRead = mutation({
+export const markAllAsRead = mutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const unread = await ctx.db

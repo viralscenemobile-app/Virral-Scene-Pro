@@ -1,4 +1,4 @@
-import { Verified, CircleDollarSign, Wand2, Rocket, Award, Grid, Layers, Plus, MapPin, Link as LinkIcon, Settings, LogOut, X, Camera, Bookmark, Zap } from "lucide-react";
+import { Verified, CircleDollarSign, Wand2, Rocket, Award, Grid, Layers, Plus, MapPin, Link as LinkIcon, Settings, LogOut, X, Camera, Bookmark, Zap, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/src/lib/utils";
 import React, { useState, useContext, useEffect } from "react";
@@ -7,6 +7,8 @@ import { api } from "../../convex/_generated/api";
 import { UserContext } from "../App";
 import { logOut } from "@/src/lib/firebase";
 import { useNavigate } from "react-router-dom";
+
+import { toast } from "sonner";
 
 const ACHIEVEMENTS = [
   { id: 1, name: "Top Creator", icon: Award, color: "text-primary", bg: "from-primary/20 to-secondary/20", shadow: "shadow-[0_0_15px_rgba(182,160,255,0.2)]" },
@@ -22,6 +24,7 @@ export function Profile() {
   const [editForm, setEditForm] = useState({ username: "", bio: "", avatarUrl: "" });
   
   const userCreations = useQuery(api.creations.listByUser, userId ? { userId } : "skip" as any);
+  const userTemplates = useQuery(api.creations.listTemplatesByUser, userId ? { userId } : "skip" as any);
   const bookmarkedCreations = useQuery(api.creations.listBookmarked, userId ? { userId } : "skip" as any);
   const updateUser = useMutation(api.users.update);
   const createTemplate = useMutation(api.creations.createTemplate);
@@ -40,10 +43,10 @@ export function Profile() {
           aspectRatio: "9:16"
         })
       });
-      alert("Template created successfully! Other users can now remix your scene.");
+      toast.success("Template created successfully! Other users can now remix your scene.");
     } catch (e) {
       console.error("Failed to create template:", e);
-      alert("Failed to create template.");
+      toast.error("Failed to create template.");
     }
   };
 
@@ -72,8 +75,9 @@ export function Profile() {
         ...editForm
       });
       setIsEditing(false);
+      toast.success("Profile updated successfully!");
     } catch (error) {
-      alert("Failed to update profile: " + (error as Error).message);
+      toast.error("Failed to update profile: " + (error as Error).message);
     }
   };
 
@@ -96,7 +100,7 @@ export function Profile() {
           <div className="absolute -inset-1 bg-gradient-to-tr from-primary via-secondary to-tertiary rounded-full blur opacity-40 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
           <div className="relative w-28 h-28 rounded-full p-1 bg-background">
             <img 
-              src={user?.avatarUrl || firebaseUser?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser?.uid}`} 
+              src={user?.avatarUrl || firebaseUser?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser?.uid}` || undefined} 
               alt="Avatar" 
               className="w-full h-full rounded-full object-cover border-2 border-surface" 
             />
@@ -185,6 +189,16 @@ export function Profile() {
             Creations
           </button>
           <button 
+            onClick={() => setActiveTab("templates")}
+            className={cn(
+              "flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
+              activeTab === "templates" ? "bg-surface-container-high text-secondary" : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            <Layers className="w-4 h-4" />
+            Templates
+          </button>
+          <button 
             onClick={() => setActiveTab("bookmarks")}
             className={cn(
               "flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
@@ -201,14 +215,10 @@ export function Profile() {
           {activeTab === "creations" && userCreations?.map((creation) => (
             <div 
               key={creation._id} 
-              className="aspect-[9/16] rounded-lg overflow-hidden relative group cursor-pointer"
+              className="aspect-[9/16] rounded-lg overflow-hidden relative group cursor-pointer bg-surface-container-high flex items-center justify-center"
               onClick={() => navigate(`/feed?id=${creation._id}`)}
             >
-              <img 
-                src={creation.thumbnailUrl} 
-                alt="Creation" 
-                className="w-full h-full object-cover transition duration-500 group-hover:scale-110" 
-              />
+              <Sparkles className="w-8 h-8 text-on-surface/20" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
                 {!creation.isTemplate && (
                   <button 
@@ -229,6 +239,22 @@ export function Profile() {
             </div>
           ))}
 
+          {activeTab === "templates" && userTemplates?.map((template) => (
+            <div 
+              key={template._id} 
+              className="aspect-[9/16] rounded-lg overflow-hidden relative group cursor-pointer bg-surface-container-high flex items-center justify-center"
+              onClick={() => navigate(`/studio?prompt=${encodeURIComponent(template.prompt)}&style=${template.style}&templateId=${template._id}`)}
+            >
+              <Sparkles className="w-8 h-8 text-on-surface/20" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-3">
+                <div className="flex items-center gap-1 text-xs font-label text-white">
+                  <Zap className="w-3.5 h-3.5 fill-current text-primary" />
+                  {template.usageCount} Uses
+                </div>
+              </div>
+            </div>
+          ))}
+
           {activeTab === "creations" && userCreations?.length === 0 && (
             <div className="col-span-2 py-12 text-center space-y-4">
               <div className="w-16 h-16 bg-surface-container-high rounded-full flex items-center justify-center mx-auto">
@@ -238,13 +264,18 @@ export function Profile() {
             </div>
           )}
 
+          {activeTab === "templates" && userTemplates?.length === 0 && (
+            <div className="col-span-2 py-12 text-center space-y-4">
+              <div className="w-16 h-16 bg-surface-container-high rounded-full flex items-center justify-center mx-auto">
+                <Layers className="w-8 h-8 text-on-surface/20" />
+              </div>
+              <p className="font-label text-sm text-on-surface/40">No templates created yet.</p>
+            </div>
+          )}
+
           {activeTab === "bookmarks" && bookmarkedCreations?.map((creation) => (
-            <div key={creation._id} className="aspect-[9/16] rounded-lg overflow-hidden relative group cursor-pointer">
-              <img 
-                src={creation.thumbnailUrl} 
-                alt="Creation" 
-                className="w-full h-full object-cover transition duration-500 group-hover:scale-110" 
-              />
+            <div key={creation._id} className="aspect-[9/16] rounded-lg overflow-hidden relative group cursor-pointer bg-surface-container-high flex items-center justify-center">
+              <Sparkles className="w-8 h-8 text-on-surface/20" />
               <div className="absolute bottom-0 w-full p-3 bg-gradient-to-t from-black/80 to-transparent">
                 <div className="flex items-center gap-1 text-xs font-label">
                   <Rocket className="w-3.5 h-3.5 fill-current" />
@@ -292,7 +323,7 @@ export function Profile() {
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group cursor-pointer">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-primary/20">
-                    <img src={editForm.avatarUrl || user?.avatarUrl} className="w-full h-full object-cover" />
+                    <img src={editForm.avatarUrl || user?.avatarUrl || undefined} className="w-full h-full object-cover" />
                   </div>
                   <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera className="text-white w-6 h-6" />

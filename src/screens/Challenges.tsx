@@ -1,4 +1,4 @@
-import { Timer, Trophy, ChevronRight, X, Heart } from "lucide-react";
+import { Timer, Trophy, ChevronRight, X, Heart, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/src/lib/utils";
 import { useQuery, useMutation } from "convex/react";
@@ -6,16 +6,20 @@ import { api } from "../../convex/_generated/api";
 import { useNavigate } from "react-router-dom";
 import { useState, useContext } from "react";
 import { UserContext } from "../App";
+import { toast } from "sonner";
 
 export function Challenges() {
-  const { userId } = useContext(UserContext);
-  const challenges = useQuery(api.challenges.list);
+  const { userId, user } = useContext(UserContext);
+  const challenges = useQuery(api.challenges.listActive);
+  const pastChallenges = useQuery(api.challenges.listPast);
   const leaderboard = useQuery(api.leaderboard.list);
   const navigate = useNavigate();
   
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const entries = useQuery(api.challenges.getEntries, selectedChallengeId ? { challengeId: selectedChallengeId as any } : "skip" as any);
   const voteEntry = useMutation(api.challenges.voteEntry);
+  const createChallenge = useMutation(api.challenges.create);
 
   const handleVote = async (entryId: string) => {
     if (!userId) return;
@@ -26,13 +30,42 @@ export function Challenges() {
     }
   };
 
+  const handleCreateChallenge = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!userId) return;
+    const formData = new FormData(e.currentTarget);
+    try {
+      await createChallenge({
+        title: formData.get("title") as string,
+        description: formData.get("description") as string,
+        imageUrl: formData.get("imageUrl") as string,
+        prizePool: Number(formData.get("prizePool")),
+        entryFee: Number(formData.get("entryFee")),
+        endTime: new Date(formData.get("endTime") as string).getTime(),
+        creatorId: userId as any,
+      });
+      toast.success("Challenge created!");
+      setIsCreateModalOpen(false);
+    } catch (e) {
+      console.error("Failed to create challenge", e);
+      toast.error("Failed to create challenge");
+    }
+  };
+
   return (
     <main className="pt-20 px-4 space-y-8 pb-24 overflow-y-auto no-scrollbar h-screen">
       {/* Section 1: Active Challenges */}
       <section className="space-y-4">
         <div className="flex justify-between items-end px-2">
           <h2 className="text-xl font-bold font-headline tracking-tight text-on-surface">Active Challenges</h2>
-          <span className="text-secondary text-sm font-label uppercase tracking-widest">See All</span>
+          {user?.role === 'admin' && (
+            <button 
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center gap-1 text-primary text-sm font-label uppercase tracking-widest"
+            >
+              <Plus className="w-4 h-4" /> Create
+            </button>
+          )}
         </div>
         
         {/* Horizontal Scroll Cards */}
@@ -46,7 +79,7 @@ export function Challenges() {
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent z-10"></div>
               <img 
                 className="w-full h-96 object-cover group-hover:scale-110 transition-transform duration-700" 
-                src={challenge.imageUrl} 
+                src={challenge.imageUrl || undefined} 
                 alt={challenge.title}
               />
               <div className="absolute top-4 right-4 z-20 glass-panel px-3 py-1.5 rounded-full flex items-center gap-2 border border-outline-variant/10">
@@ -83,7 +116,65 @@ export function Challenges() {
         </div>
       </section>
 
-      {/* Section 2: Global Leaderboard */}
+      {/* Create Challenge Modal */}
+      <AnimatePresence>
+        {isCreateModalOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCreateModalOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-surface-container-low rounded-[2.5rem] z-[110] p-8 flex flex-col gap-6"
+            >
+              <h3 className="font-headline font-bold text-xl">Create Challenge</h3>
+              <form onSubmit={handleCreateChallenge} className="space-y-4">
+                <input name="title" placeholder="Title" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                <textarea name="description" placeholder="Description" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                <input name="imageUrl" placeholder="Image URL" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                <input name="prizePool" type="number" placeholder="Prize Pool" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                <input name="entryFee" type="number" placeholder="Entry Fee" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                <input name="endTime" type="datetime-local" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                <button type="submit" className="w-full py-4 bg-primary text-on-primary rounded-full font-bold">CREATE</button>
+              </form>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      
+      {/* ... rest of the file ... */}
+
+      {/* Section 2: Past Challenges */}
+      {pastChallenges && pastChallenges.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex justify-between items-end px-2">
+            <h2 className="text-xl font-bold font-headline tracking-tight text-on-surface">Past Challenges</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {pastChallenges.map((challenge) => (
+              <div 
+                key={challenge._id}
+                onClick={() => setSelectedChallengeId(challenge._id)}
+                className="relative aspect-video rounded-xl overflow-hidden group cursor-pointer"
+              >
+                <img src={challenge.imageUrl || undefined} alt={challenge.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-3">
+                  <h4 className="text-xs font-bold text-white truncate">{challenge.title}</h4>
+                  <p className="text-[8px] font-label text-white/60 uppercase tracking-widest">Ended</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Section 3: Global Leaderboard */}
       <section className="space-y-6 pb-12">
         <div className="flex justify-between items-end px-2">
           <h2 className="text-xl font-bold font-headline tracking-tight text-on-surface">Global Leaderboard</h2>
@@ -104,7 +195,7 @@ export function Challenges() {
               <div className="relative">
                 <div className={cn("w-12 h-12 rounded-full overflow-hidden p-0.5", index === 0 ? "border-2 border-primary" : "border border-outline-variant/20")}>
                   {entry.user?.avatarUrl ? (
-                    <img src={entry.user.avatarUrl} alt={entry.user.username} className="w-full h-full rounded-full object-cover" />
+                    <img src={entry.user.avatarUrl || undefined} alt={entry.user.username} className="w-full h-full rounded-full object-cover" />
                   ) : (
                     <div className="w-full h-full bg-surface-container-highest rounded-full flex items-center justify-center">
                       <span className="text-xs font-bold">{index + 1}</span>
@@ -187,7 +278,7 @@ export function Challenges() {
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
                           <div className="flex items-center gap-2 mb-2">
-                            <img src={entry.user?.avatarUrl} alt="" className="w-6 h-6 rounded-full border border-white/20" />
+                            <img src={entry.user?.avatarUrl || undefined} alt="" className="w-6 h-6 rounded-full border border-white/20" />
                             <span className="text-[10px] font-bold text-white truncate">@{entry.user?.username}</span>
                           </div>
                           <button 

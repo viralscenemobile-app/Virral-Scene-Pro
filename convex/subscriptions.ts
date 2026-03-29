@@ -46,3 +46,19 @@ export const subscribe = mutation({
     }
   },
 });
+
+export const unsubscribe = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const active = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.gt(q.field("expiresAt"), now))
+      .first();
+    
+    if (active) {
+      await ctx.db.patch(active._id, { expiresAt: now });
+    }
+  },
+});

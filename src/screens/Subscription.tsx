@@ -7,6 +7,8 @@ import { useContext, useState } from "react";
 import { UserContext } from "../App";
 import { useNavigate } from "react-router-dom";
 
+import { toast } from "sonner";
+
 const TIERS = [
   {
     id: "free",
@@ -48,6 +50,8 @@ export function Subscription() {
   
   const activeSub = useQuery(api.subscriptions.getActive, userId ? { userId } : "skip" as any);
   const subscribe = useMutation(api.subscriptions.subscribe);
+  const unsubscribe = useMutation(api.subscriptions.unsubscribe);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const handleSubscribe = async (tier: string) => {
     if (!userId) return;
@@ -62,17 +66,41 @@ export function Subscription() {
         tier,
         durationDays: 30,
       });
-      alert(`Successfully subscribed to ${tier.toUpperCase()}!`);
+      toast.success(`Successfully subscribed to ${tier.toUpperCase()}!`);
       navigate("/profile");
     } catch (e) {
       console.error("Subscription failed:", e);
+      toast.error("Subscription failed. Please try again.");
     } finally {
       setIsSubscribing(null);
     }
   };
 
+  const handleUnsubscribe = async () => {
+    if (!userId) return;
+    try {
+      await unsubscribe({ userId });
+      toast.success("Successfully unsubscribed.");
+      setShowConfirm(false);
+    } catch (e) {
+      toast.error("Failed to unsubscribe.");
+    }
+  };
+
   return (
     <main className="pt-24 px-4 pb-24 overflow-y-auto no-scrollbar h-screen bg-surface-container-lowest">
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-container-high p-6 rounded-3xl max-w-sm w-full">
+            <h3 className="text-xl font-bold mb-4">Confirm Unsubscribe</h3>
+            <p className="mb-6 text-sm opacity-80">Are you sure you want to unsubscribe from {activeSub?.tier.toUpperCase()}? You will lose access to premium features.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setShowConfirm(false)} className="flex-1 py-3 rounded-xl bg-surface-container-highest">Cancel</button>
+              <button onClick={handleUnsubscribe} className="flex-1 py-3 rounded-xl bg-red-500 text-white">Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
       <section className="text-center mb-12 space-y-4">
         <h1 className="text-4xl font-black font-headline tracking-tight text-on-surface">Upgrade Your Scene</h1>
         <p className="text-on-surface-variant max-w-xs mx-auto text-sm leading-relaxed">
@@ -133,6 +161,14 @@ export function Subscription() {
             >
               {isSubscribing === tier.id ? "Processing..." : activeSub?.tier === tier.id ? "Current Plan" : tier.id === "free" ? "Default" : "Subscribe Now"}
             </button>
+            {activeSub?.tier === tier.id && tier.id !== "free" && (
+              <button 
+                onClick={() => setShowConfirm(true)}
+                className="w-full mt-4 py-3 rounded-2xl font-black font-headline text-sm uppercase tracking-widest transition-all active:scale-95 bg-red-500 text-white shadow-lg"
+              >
+                Unsubscribe
+              </button>
+            )}
           </motion.div>
         ))}
       </div>
