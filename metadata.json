@@ -1,0 +1,8 @@
+{
+  "name": "Viral Scene Pro",
+  "description": "A platform for discovering, creating, and sharing AI-generated cinematic scenes and templates.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

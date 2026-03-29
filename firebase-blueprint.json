@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "firebaseUid": { "type": "string", "description": "Firebase Auth UID" },
+        "username": { "type": "string", "description": "Unique username" },
+        "avatarUrl": { "type": "string", "description": "Profile picture URL" },
+        "bio": { "type": "string", "description": "User biography" },
+        "followers": { "type": "number", "description": "Number of followers" },
+        "following": { "type": "number", "description": "Number of users followed" },
+        "coins": { "type": "number", "description": "User's virtual currency balance" },
+        "verified": { "type": "boolean", "description": "Whether the user is verified" },
+        "lastRewardClaimedAt": { "type": "number", "description": "Timestamp of last reward claim" }
+      },
+      "required": ["firebaseUid", "username", "avatarUrl", "followers", "following", "coins", "verified"]
+    },
+    "Creation": {
+      "title": "Creation",
+      "description": "AI-generated cinematic scene",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "ID of the creator" },
+        "prompt": { "type": "string", "description": "AI prompt used" },
+        "style": { "type": "string", "description": "Visual style" },
+        "videoUrl": { "type": "string", "description": "URL to the video file" },
+        "thumbnailUrl": { "type": "string", "description": "URL to the thumbnail image" },
+        "views": { "type": "number", "description": "Number of views" },
+        "likes": { "type": "number", "description": "Number of likes" },
+        "comments": { "type": "number", "description": "Number of comments" },
+        "isTemplate": { "type": "boolean", "description": "Whether this is a template" },
+        "templateId": { "type": "string", "description": "ID of the template used (if any)" },
+        "challengeId": { "type": "string", "description": "ID of the challenge (if any)" },
+        "createdAt": { "type": "number", "description": "Creation timestamp" }
+      },
+      "required": ["userId", "prompt", "style", "videoUrl", "thumbnailUrl", "views", "likes", "comments", "isTemplate", "createdAt"]
+    },
+    "Challenge": {
+      "title": "Challenge",
+      "description": "Community creation challenge",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Challenge title" },
+        "description": { "type": "string", "description": "Challenge description" },
+        "imageUrl": { "type": "string", "description": "Challenge banner image" },
+        "prizePool": { "type": "number", "description": "Total prize pool" },
+        "entryFee": { "type": "number", "description": "Entry fee in coins" },
+        "endTime": { "type": "number", "description": "End timestamp" },
+        "creatorId": { "type": "string", "description": "ID of the challenge creator" },
+        "status": { "type": "string", "enum": ["active", "completed"], "description": "Challenge status" }
+      },
+      "required": ["title", "description", "imageUrl", "prizePool", "entryFee", "endTime", "creatorId", "status"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "User comment on a creation",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "ID of the commenter" },
+        "creationId": { "type": "string", "description": "ID of the creation" },
+        "text": { "type": "string", "description": "Comment text" },
+        "createdAt": { "type": "number", "description": "Comment timestamp" }
+      },
+      "required": ["userId", "creationId", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/creations/{creationId}": { "schema": "Creation", "description": "AI-generated scenes" },
+    "/challenges/{challengeId}": { "schema": "Challenge", "description": "Community challenges" },
+    "/creations/{creationId}/comments/{commentId}": { "schema": "Comment", "description": "Comments on creations" },
+    "/creations/{creationId}/likes/{userId}": { "schema": "object", "description": "Likes on creations" },
+    "/users/{userId}/follows/{followingId}": { "schema": "object", "description": "User follow relationships" }
+  }
+}

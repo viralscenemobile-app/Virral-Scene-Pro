@@ -1,0 +1,10 @@
+{
+  "projectId": "viralsceneapp",
+  "appId": "1:516497420857:web:c49731a236fc877aced3e8",
+  "apiKey": "AIzaSyCBtpEg2uyTC12LW-XihaKViHz2rw-pj7I",
+  "authDomain": "viralsceneapp.firebaseapp.com",
+  "firestoreDatabaseId": "viral-scene-db",
+  "storageBucket": "viralsceneapp.firebasestorage.app",
+  "messagingSenderId": "516497420857",
+  "measurementId": ""
+}
