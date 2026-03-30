@@ -1,4 +1,4 @@
-import { Sparkles, Maximize, Timer, Zap, ChevronRight, CheckCircle2, Loader2, Key, Coins, Image as ImageIcon, Video, Upload, Gift } from "lucide-react";
+import { Sparkles, Maximize, Timer, Zap, ChevronRight, CheckCircle2, Loader2, Key, Coins, Image as ImageIcon, Video, Upload, Gift, Library, PlusCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useContext, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -9,6 +9,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { UserContext } from "../App";
 import { getUploadUrl, getPublicUrl } from "@/src/lib/r2";
+import { isCreatorPlus } from "../lib/subscription";
 
 import { toast } from "sonner";
 
@@ -31,6 +32,8 @@ const DURATIONS = ["3s", "5s", "10s"];
 export function Studio() {
   const { userId } = useContext(UserContext);
   const [searchParams] = useSearchParams();
+  const challengeId = searchParams.get("challengeId");
+  const [creationMode, setCreationMode] = useState<"single" | "series">("single");
   const [activeTab, setActiveTab] = useState<"text-to-video" | "text-to-image" | "image-to-video" | "direct-upload">("text-to-video");
   const [selectedStyle, setSelectedStyle] = useState("cinematic");
   const [prompt, setPrompt] = useState("");
@@ -47,8 +50,31 @@ export function Studio() {
   const [isClaiming, setIsClaiming] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   
+  // Series specific state
+  const [seriesTitle, setSeriesTitle] = useState("");
+  const [seriesDescription, setSeriesDescription] = useState("");
+  const [seriesCoverImage, setSeriesCoverImage] = useState<File | null>(null);
+  const [seriesCoverPreview, setSeriesCoverPreview] = useState<string | null>(null);
+  const seriesCoverInputRef = useRef<HTMLInputElement>(null);
+  const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
+  const [episodeNumber, setEpisodeNumber] = useState<number>(1);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const user = useQuery(api.users.getById, userId ? { id: userId } : "skip" as any);
+  const subscription = useQuery(api.subscriptions.getActive, userId ? { userId } : "skip" as any);
+  const mySeries = useQuery(api.creations.listSeries, userId ? { userId } : "skip" as any);
+  const createCreation = useMutation(api.creations.create);
+  const createSeries = useMutation(api.creations.createSeries);
+  const deductCoins = useMutation(api.users.deductCoins);
+  const claimDailyReward = useMutation(api.users.claimDailyReward);
+
+  const isCreator = isCreatorPlus(subscription?.tier);
+
+  useEffect(() => {
+    if (subscription === undefined) return;
+  }, [subscription]);
+
   const generateThumbnail = async (videoBlob: Blob): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
@@ -73,11 +99,6 @@ export function Studio() {
       video.load();
     });
   };
-  
-  const user = useQuery(api.users.getById, userId ? { id: userId } : "skip" as any);
-  const createCreation = useMutation(api.creations.create);
-  const deductCoins = useMutation(api.users.deductCoins);
-  const claimDailyReward = useMutation(api.users.claimDailyReward);
 
   useEffect(() => {
     const remixPrompt = searchParams.get("prompt");
@@ -139,8 +160,25 @@ export function Studio() {
     }
   };
 
+  const handleSeriesCoverSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSeriesCoverImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setSeriesCoverPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!userId || isGenerating) return;
+    
+    if (creationMode === "series") {
+      if (!seriesTitle || !seriesDescription || !seriesCoverPreview) {
+        toast.error("Please fill in all series details and upload a cover image.");
+        return;
+      }
+    }
     
     if (activeTab === "image-to-video" && !selectedImage) {
       toast.error("Please select an image first");
@@ -157,7 +195,7 @@ export function Studio() {
       return;
     }
 
-    const cost = COSTS[activeTab];
+    const cost = COSTS[activeTab as keyof typeof COSTS] || 0;
     if (!user || user.coins < cost) {
       toast.error(`Insufficient coins! You need ${cost} coins.`);
       return;
@@ -238,7 +276,27 @@ export function Studio() {
 
       // 4. Save to Convex
       setGenerationStep("Finalizing...");
-      const challengeId = searchParams.get("challengeId");
+      
+      let finalSeriesId = selectedSeriesId;
+      
+      if (creationMode === "series") {
+        setGenerationStep("Creating series...");
+        // Upload cover image
+        const coverFileName = `series-cover-${Date.now()}.jpg`;
+        const coverUploadUrl = await getUploadUrl(coverFileName, "image/jpeg");
+        const coverResponse = await fetch(seriesCoverPreview!);
+        const coverBlob = await coverResponse.blob();
+        await fetch(coverUploadUrl, { method: "PUT", body: coverBlob, headers: { "Content-Type": "image/jpeg" } });
+        const coverImageUrl = getPublicUrl(coverFileName);
+        
+        finalSeriesId = await createSeries({
+          creatorId: userId,
+          title: seriesTitle,
+          description: seriesDescription,
+          coverImageUrl,
+          isPublic: true,
+        });
+      }
       
       await createCreation({
         userId,
@@ -249,14 +307,25 @@ export function Studio() {
         thumbnailUrl: thumbPublicUrl,
         isTemplate: false,
         ...(challengeId ? { challengeId: challengeId as any } : {}),
+        ...(finalSeriesId ? { seriesId: finalSeriesId as any, episodeNumber: creationMode === "series" ? 1 : episodeNumber } : {}),
       });
 
-      toast.success("Success! Your creation is ready.");
+      toast.success(creationMode === "series" ? "Series and first episode created!" : "Success! Your creation is ready.");
       setPrompt("");
       setSelectedImage(null);
       setImagePreview(null);
       setSelectedVideo(null);
       setVideoPreview(null);
+      setTitle("");
+      if (creationMode === "series") {
+        setSeriesTitle("");
+        setSeriesDescription("");
+        setSeriesCoverPreview(null);
+        setSeriesCoverImage(null);
+        setCreationMode("single");
+      } else if (selectedSeriesId) {
+        setEpisodeNumber(prev => prev + 1);
+      }
     } catch (e: any) {
       console.error("Generation failed:", e);
       if (e.message?.includes("Requested entity was not found")) {
@@ -333,7 +402,7 @@ export function Studio() {
                 <p className="text-sm font-bold text-on-surface tracking-tight">System Status</p>
                 <span className="px-1.5 py-0.5 rounded bg-primary/10 text-[8px] font-bold text-primary uppercase tracking-widest">Active</span>
               </div>
-              <p className="text-[9px] text-on-surface/40 uppercase tracking-[0.1em]">Cinematic Engine • Low Latency</p>
+              <p className="text-[9px] text-on-surface/40 uppercase tracking-[0.1em]">Gemini 3 Flash Preview • Low Latency</p>
             </div>
           </div>
           
@@ -343,8 +412,38 @@ export function Studio() {
           </div>
         </div>
 
+        {/* Creation Mode Toggle for Creators */}
+        {isCreator && !challengeId && (
+          <div className="flex bg-surface-container-low p-1 rounded-xl max-w-sm mx-auto">
+            <button
+              onClick={() => setCreationMode("single")}
+              className={cn(
+                "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                creationMode === "single" ? "bg-surface-container-high text-on-surface shadow-sm" : "text-on-surface/50 hover:text-on-surface"
+              )}
+            >
+              Single Creation
+            </button>
+            <button
+              onClick={() => {
+                setCreationMode("series");
+                if (activeTab === "text-to-image") setActiveTab("text-to-video");
+              }}
+              className={cn(
+                "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                creationMode === "series" ? "bg-surface-container-high text-on-surface shadow-sm" : "text-on-surface/50 hover:text-on-surface"
+              )}
+            >
+              New Series
+            </button>
+          </div>
+        )}
+
         {/* Tabs */}
-        <div className="grid grid-cols-2 gap-3 bg-surface-container-low p-2 rounded-2xl w-full max-w-sm mx-auto">
+        <div className={cn(
+          "grid gap-3 bg-surface-container-low p-2 rounded-2xl w-full max-w-sm mx-auto",
+          creationMode === "series" ? "grid-cols-3" : "grid-cols-2"
+        )}>
           <button 
             onClick={() => setActiveTab("text-to-video")}
             className={cn(
@@ -356,50 +455,151 @@ export function Studio() {
           >
             Text → Video
           </button>
-          <button 
-            onClick={() => setActiveTab("text-to-image")}
-            className={cn(
-              "h-20 rounded-xl font-headline text-xs font-bold transition-all p-2 flex items-center justify-center text-center",
-              activeTab === "text-to-image" 
-                ? "bg-gradient-to-br from-purple-600 to-pink-600 text-white shadow-lg shadow-pink-500/20" 
-                : "bg-surface-container-high text-on-surface/50 hover:text-on-surface hover:bg-surface-container-highest"
-            )}
-          >
-            Text → Image
-          </button>
-          <button 
-            onClick={() => setActiveTab("image-to-video")}
-            className={cn(
-              "h-20 rounded-xl font-headline text-xs font-bold transition-all p-2 flex items-center justify-center text-center",
-              activeTab === "image-to-video" 
-                ? "bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg shadow-red-500/20" 
-                : "bg-surface-container-high text-on-surface/50 hover:text-on-surface hover:bg-surface-container-highest"
-            )}
-          >
-            Image → Video
-          </button>
-          <button 
-            onClick={() => setActiveTab("direct-upload")}
-            className={cn(
-              "h-20 rounded-xl font-headline text-xs font-bold transition-all p-2 flex items-center justify-center text-center",
-              activeTab === "direct-upload" 
-                ? "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-teal-500/20" 
-                : "bg-surface-container-high text-on-surface/50 hover:text-on-surface hover:bg-surface-container-highest"
-            )}
-          >
-            Direct Upload
-          </button>
+          {creationMode === "single" && (
+            <button 
+              onClick={() => setActiveTab("text-to-image")}
+              className={cn(
+                "h-20 rounded-xl font-headline text-xs font-bold transition-all p-2 flex items-center justify-center text-center",
+                activeTab === "text-to-image" 
+                  ? "bg-gradient-to-br from-purple-600 to-pink-600 text-white shadow-lg shadow-pink-500/20" 
+                  : "bg-surface-container-high text-on-surface/50 hover:text-on-surface hover:bg-surface-container-highest"
+              )}
+            >
+              Text → Image
+            </button>
+          )}
+          {(creationMode === "single" || isCreator) && (
+            <button 
+              onClick={() => setActiveTab("image-to-video")}
+              className={cn(
+                "h-20 rounded-xl font-headline text-xs font-bold transition-all p-2 flex items-center justify-center text-center",
+                activeTab === "image-to-video" 
+                  ? "bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg shadow-red-500/20" 
+                  : "bg-surface-container-high text-on-surface/50 hover:text-on-surface hover:bg-surface-container-highest"
+              )}
+            >
+              Image → Video
+            </button>
+          )}
+          {(creationMode === "single" || isCreator) && (
+            <button 
+              onClick={() => setActiveTab("direct-upload")}
+              className={cn(
+                "h-20 rounded-xl font-headline text-xs font-bold transition-all p-2 flex items-center justify-center text-center",
+                activeTab === "direct-upload" 
+                  ? "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-teal-500/20" 
+                  : "bg-surface-container-high text-on-surface/50 hover:text-on-surface hover:bg-surface-container-highest"
+              )}
+            >
+              Direct Upload
+            </button>
+          )}
         </div>
+
+        {/* Series Selection for Creators */}
+        {isCreator && creationMode === "single" && mySeries && mySeries.length > 0 && (
+          <section className="space-y-4">
+            <label className="block text-primary text-[10px] font-bold uppercase tracking-[0.2em]">Add to Series (Optional)</label>
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              <button 
+                onClick={() => setSelectedSeriesId(null)}
+                className={cn(
+                  "flex-none px-4 py-2 rounded-full text-xs font-bold border transition-all",
+                  selectedSeriesId === null ? "bg-primary text-on-primary border-primary" : "bg-surface-container-low text-on-surface/60 border-outline-variant/20"
+                )}
+              >
+                Standalone
+              </button>
+              {mySeries.map(s => (
+                <button 
+                  key={s._id}
+                  onClick={() => setSelectedSeriesId(s._id)}
+                  className={cn(
+                    "flex-none px-4 py-2 rounded-full text-xs font-bold border transition-all",
+                    selectedSeriesId === s._id ? "bg-secondary text-on-secondary border-secondary" : "bg-surface-container-low text-on-surface/60 border-outline-variant/20"
+                  )}
+                >
+                  {s.title}
+                </button>
+              ))}
+            </div>
+            {selectedSeriesId && (
+              <div className="flex items-center gap-4 bg-surface-container-low p-4 rounded-xl">
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold text-on-surface/40 uppercase tracking-widest">Episode Number</p>
+                  <input 
+                    type="number" 
+                    value={episodeNumber} 
+                    onChange={(e) => setEpisodeNumber(parseInt(e.target.value))}
+                    className="bg-transparent border-none focus:ring-0 text-lg font-bold w-full"
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Mode Specific Inputs */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTab}
+            key={activeTab + creationMode}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className="space-y-6"
           >
+            {creationMode === "series" && (
+              <section className="space-y-6">
+                <div className="bg-surface-container-low rounded-2xl p-6 space-y-6">
+                  <div className="space-y-4">
+                    <label className="block text-primary text-[10px] font-bold uppercase tracking-[0.2em]">Series Cover Image</label>
+                    <div 
+                      onClick={() => seriesCoverInputRef.current?.click()}
+                      className="relative aspect-[16/9] rounded-xl bg-surface-container-high flex flex-col items-center justify-center cursor-pointer hover:bg-surface-container-highest transition-all overflow-hidden group"
+                    >
+                      {seriesCoverPreview ? (
+                        <img src={seriesCoverPreview || undefined} alt="Cover" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center">
+                          <ImageIcon className="w-8 h-8 text-on-surface/20 mx-auto mb-2" />
+                          <p className="text-[10px] font-bold text-on-surface/40 uppercase tracking-widest">Upload Cover</p>
+                        </div>
+                      )}
+                      <input 
+                        type="file" 
+                        ref={seriesCoverInputRef} 
+                        onChange={handleSeriesCoverSelect} 
+                        accept="image/*" 
+                        className="hidden" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="block text-primary text-[10px] font-bold uppercase tracking-[0.2em]">Series Title</label>
+                    <input 
+                      type="text"
+                      className="w-full bg-surface-container-high p-4 rounded-xl focus:ring-2 focus:ring-primary/20 focus:outline-none text-lg font-bold"
+                      placeholder="e.g. The Lost Kingdom"
+                      value={seriesTitle}
+                      onChange={(e) => setSeriesTitle(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="block text-primary text-[10px] font-bold uppercase tracking-[0.2em]">Description</label>
+                    <textarea 
+                      className="w-full bg-surface-container-high p-4 rounded-xl focus:ring-2 focus:ring-primary/20 focus:outline-none text-sm leading-relaxed resize-none"
+                      placeholder="What is this series about?"
+                      rows={4}
+                      value={seriesDescription}
+                      onChange={(e) => setSeriesDescription(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </section>
+            )}
+
             {activeTab === "image-to-video" && (
               <section className="space-y-4">
                 <label className="block text-primary text-xs font-bold uppercase tracking-widest">Source Image</label>
@@ -554,7 +754,7 @@ export function Studio() {
         </AnimatePresence>
 
         {/* Art Style */}
-        {activeTab !== "direct-upload" && (
+        {activeTab !== "direct-upload" && activeTab !== "series" && (
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-on-surface">Art Style</h3>
@@ -592,53 +792,27 @@ export function Studio() {
         )}
 
         {/* Settings */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 bg-surface-container-low rounded-lg flex items-center justify-between group cursor-pointer hover:bg-surface-container-high transition-colors">
-            <div className="flex items-center gap-3">
-              <Maximize className="text-primary w-5 h-5" />
-              <div>
-                <p className="text-sm font-bold">Aspect Ratio</p>
-                {activeTab === "direct-upload" ? (
-                  <p className="text-xs text-on-surface/40">{aspectRatio}</p>
-                ) : (
-                  <div className="flex gap-2 mt-1">
-                    {["16:9", "9:16", "1:1"].map((ratio) => (
-                      <button
-                        key={ratio}
-                        onClick={() => setAspectRatio(ratio as any)}
-                        className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter",
-                          aspectRatio === ratio ? "bg-primary text-on-primary" : "bg-surface-container-high text-on-surface/50"
-                        )}
-                      >
-                        {ratio}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          {activeTab !== "text-to-image" && (
+        {activeTab !== "series" && (
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-surface-container-low rounded-lg flex items-center justify-between group cursor-pointer hover:bg-surface-container-high transition-colors">
               <div className="flex items-center gap-3">
-                <Timer className="text-primary w-5 h-5" />
+                <Maximize className="text-primary w-5 h-5" />
                 <div>
-                  <p className="text-sm font-bold">Duration</p>
+                  <p className="text-sm font-bold">Aspect Ratio</p>
                   {activeTab === "direct-upload" ? (
-                    <p className="text-xs text-on-surface/40">{duration}</p>
+                    <p className="text-xs text-on-surface/40">{aspectRatio}</p>
                   ) : (
                     <div className="flex gap-2 mt-1">
-                      {DURATIONS.map((d) => (
+                      {["16:9", "9:16", "1:1"].map((ratio) => (
                         <button
-                          key={d}
-                          onClick={() => setDuration(d)}
+                          key={ratio}
+                          onClick={() => setAspectRatio(ratio as any)}
                           className={cn(
                             "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter",
-                            duration === d ? "bg-primary text-on-primary" : "bg-surface-container-high text-on-surface/50"
+                            aspectRatio === ratio ? "bg-primary text-on-primary" : "bg-surface-container-high text-on-surface/50"
                           )}
                         >
-                          {d}
+                          {ratio}
                         </button>
                       ))}
                     </div>
@@ -646,8 +820,36 @@ export function Studio() {
                 </div>
               </div>
             </div>
-          )}
-        </section>
+            {activeTab !== "text-to-image" && (
+              <div className="p-4 bg-surface-container-low rounded-lg flex items-center justify-between group cursor-pointer hover:bg-surface-container-high transition-colors">
+                <div className="flex items-center gap-3">
+                  <Timer className="text-primary w-5 h-5" />
+                  <div>
+                    <p className="text-sm font-bold">Duration</p>
+                    {activeTab === "direct-upload" ? (
+                      <p className="text-xs text-on-surface/40">{duration}</p>
+                    ) : (
+                      <div className="flex gap-2 mt-1">
+                        {DURATIONS.map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => setDuration(d)}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter",
+                              duration === d ? "bg-primary text-on-primary" : "bg-surface-container-high text-on-surface/50"
+                            )}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Generate Button */}
         <div className="pt-6">
@@ -657,16 +859,21 @@ export function Studio() {
             disabled={isGenerating || 
               ((activeTab === "text-to-video" || activeTab === "text-to-image") && !prompt) || 
               (activeTab === "image-to-video" && !selectedImage) || 
-              (activeTab === "direct-upload" && !selectedImage && !selectedVideo)
+              (activeTab === "direct-upload" && !selectedImage && !selectedVideo) ||
+              (activeTab === "series" && (!seriesTitle || !seriesDescription || !imagePreview))
             }
             className="w-full py-5 rounded-full bg-primary text-on-primary text-lg font-bold flex items-center justify-center gap-3 disabled:opacity-50"
           >
             {isGenerating ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              <Zap className="w-5 h-5 fill-current" />
+              activeTab === "series" ? <PlusCircle className="w-5 h-5" /> : <Zap className="w-5 h-5 fill-current" />
             )}
-            {isGenerating ? generationStep : (activeTab === "direct-upload" ? "Upload" : `Generate (${COSTS[activeTab]} Coins)`)}
+            {isGenerating ? generationStep : (
+              activeTab === "direct-upload" ? "Upload" : 
+              activeTab === "series" ? "Create Series" : 
+              `Generate (${COSTS[activeTab as keyof typeof COSTS]} Coins)`
+            )}
           </motion.button>
           <p className="text-center mt-4 text-xs text-on-surface/30">
             Average generation time: <span className="text-secondary">120s</span>

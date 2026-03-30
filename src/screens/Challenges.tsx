@@ -1,25 +1,40 @@
-import { Timer, Trophy, ChevronRight, X, Heart, Plus } from "lucide-react";
+import { Timer, Trophy, ChevronRight, X, Heart, Plus, Image as ImageIcon, Sparkles, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/src/lib/utils";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useNavigate } from "react-router-dom";
-import { useState, useContext } from "react";
+import { useState, useContext, useRef } from "react";
+import React from "react";
 import { UserContext } from "../App";
 import { toast } from "sonner";
+import { isProOrCreator } from "../lib/subscription";
+import { getUploadUrl, getPublicUrl } from "@/src/lib/r2";
+import { generateImage } from "@/src/lib/gemini";
 
 export function Challenges() {
   const { userId, user } = useContext(UserContext);
   const challenges = useQuery(api.challenges.listActive);
   const pastChallenges = useQuery(api.challenges.listPast);
   const leaderboard = useQuery(api.leaderboard.list);
+  const subscription = useQuery(api.subscriptions.getActive, userId ? { userId } : "skip" as any);
   const navigate = useNavigate();
   
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  const [coverImage, setCoverImage] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [coverPrompt, setCoverPrompt] = useState("");
+  const [isGeneratingCover, setIsGeneratingCover] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
   const entries = useQuery(api.challenges.getEntries, selectedChallengeId ? { challengeId: selectedChallengeId as any } : "skip" as any);
   const voteEntry = useMutation(api.challenges.voteEntry);
   const createChallenge = useMutation(api.challenges.create);
+  const deductCoins = useMutation(api.users.deductCoins);
+
+  const canCreateChallenge = user?.role === 'admin' || isProOrCreator(subscription?.tier);
 
   const handleVote = async (entryId: string) => {
     if (!userId) return;
@@ -30,15 +45,79 @@ export function Challenges() {
     }
   };
 
+  const handleCoverSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCoverImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCoverPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGenerateCover = async () => {
+    if (!coverPrompt) return;
+    if (!userId) return;
+    
+    setIsGeneratingCover(true);
+    try {
+      // Deduct coins
+      const success = await deductCoins({ id: userId as any, amount: 5 });
+      if (!success) {
+        toast.error("Not enough coins!");
+        setIsGeneratingCover(false);
+        return;
+      }
+
+      const imageBlob = await generateImage(coverPrompt, "16:9");
+      const file = new File([imageBlob], "generated-cover.jpg", { type: "image/jpeg" });
+      setCoverImage(file);
+      setCoverPreview(URL.createObjectURL(imageBlob));
+      toast.success("Cover generated!");
+    } catch (e) {
+      console.error("Failed to generate cover", e);
+      toast.error("Failed to generate cover");
+    } finally {
+      setIsGeneratingCover(false);
+    }
+  };
+
   const handleCreateChallenge = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!userId) return;
+    
+    if (!coverImage && !coverPreview) {
+      toast.error("Please provide a cover image");
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
     try {
+      let finalImageUrl = "";
+      
+      if (coverImage) {
+        const fileName = `${userId}-${Date.now()}-${coverImage.name}`;
+        const uploadUrl = await getUploadUrl(fileName, coverImage.type);
+        
+        await fetch(uploadUrl, {
+          method: "PUT",
+          body: coverImage,
+          headers: {
+            "Content-Type": coverImage.type,
+          },
+        });
+        
+        finalImageUrl = getPublicUrl(fileName);
+      } else if (coverPreview && coverPreview.startsWith("http")) {
+         finalImageUrl = coverPreview;
+      }
+
       await createChallenge({
         title: formData.get("title") as string,
         description: formData.get("description") as string,
-        imageUrl: formData.get("imageUrl") as string,
+        imageUrl: finalImageUrl,
         prizePool: Number(formData.get("prizePool")),
         entryFee: Number(formData.get("entryFee")),
         endTime: new Date(formData.get("endTime") as string).getTime(),
@@ -46,6 +125,9 @@ export function Challenges() {
       });
       toast.success("Challenge created!");
       setIsCreateModalOpen(false);
+      setCoverImage(null);
+      setCoverPreview(null);
+      setCoverPrompt("");
     } catch (e) {
       console.error("Failed to create challenge", e);
       toast.error("Failed to create challenge");
@@ -58,7 +140,7 @@ export function Challenges() {
       <section className="space-y-4">
         <div className="flex justify-between items-end px-2">
           <h2 className="text-xl font-bold font-headline tracking-tight text-on-surface">Active Challenges</h2>
-          {user?.role === 'admin' && (
+          {canCreateChallenge && (
             <button 
               onClick={() => setIsCreateModalOpen(true)}
               className="flex items-center gap-1 text-primary text-sm font-label uppercase tracking-widest"
@@ -137,7 +219,61 @@ export function Challenges() {
               <form onSubmit={handleCreateChallenge} className="space-y-4">
                 <input name="title" placeholder="Title" className="w-full bg-surface-container-high p-4 rounded-xl" required />
                 <textarea name="description" placeholder="Description" className="w-full bg-surface-container-high p-4 rounded-xl" required />
-                <input name="imageUrl" placeholder="Image URL" className="w-full bg-surface-container-high p-4 rounded-xl" required />
+                
+                {/* Cover Image Section */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-on-surface/60 uppercase tracking-wider">Cover Image</label>
+                  
+                  {coverPreview ? (
+                    <div className="relative w-full h-32 rounded-xl overflow-hidden group">
+                      <img src={coverPreview} alt="Cover preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCoverPreview(null);
+                          setCoverImage(null);
+                        }}
+                        className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => coverInputRef.current?.click()}
+                      className="w-full h-32 rounded-xl border-2 border-dashed border-outline-variant flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-surface-container-high transition-colors"
+                    >
+                      <ImageIcon className="w-6 h-6 text-on-surface/40" />
+                      <span className="text-xs text-on-surface/60 font-medium">Click to upload cover</span>
+                    </div>
+                  )}
+                  <input 
+                    type="file" 
+                    ref={coverInputRef}
+                    onChange={handleCoverSelect}
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Or generate with AI (5 coins)..." 
+                      value={coverPrompt}
+                      onChange={(e) => setCoverPrompt(e.target.value)}
+                      className="flex-1 bg-surface-container-high px-3 py-2 rounded-lg text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGenerateCover}
+                      disabled={isGeneratingCover || !coverPrompt}
+                      className="px-3 py-2 bg-secondary text-on-secondary rounded-lg disabled:opacity-50 flex items-center justify-center"
+                    >
+                      {isGeneratingCover ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
                 <input name="prizePool" type="number" placeholder="Prize Pool" className="w-full bg-surface-container-high p-4 rounded-xl" required />
                 <input name="entryFee" type="number" placeholder="Entry Fee" className="w-full bg-surface-container-high p-4 rounded-xl" required />
                 <input name="endTime" type="datetime-local" className="w-full bg-surface-container-high p-4 rounded-xl" required />

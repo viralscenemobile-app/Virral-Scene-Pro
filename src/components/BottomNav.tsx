@@ -5,8 +5,6 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import React, { useContext, useEffect } from "react";
 import { UserContext } from "../App";
-import { isProOrCreator } from "../lib/subscription";
-import { toast } from "sonner";
 
 export function BottomNav() {
   const location = useLocation();
@@ -22,21 +20,6 @@ export function BottomNav() {
     { icon: User, label: "Profile", path: "/profile" },
   ];
 
-  const handleStudioClick = (e: React.MouseEvent) => {
-    // If subscription is still loading, prevent action
-    if (subscription === undefined) {
-      e.preventDefault();
-      toast.loading("Checking subscription...");
-      return;
-    }
-
-    if (!isProOrCreator(subscription?.tier)) {
-      e.preventDefault();
-      toast.error("Upgrade to Pro or Creator+ to access Studio");
-      navigate("/subscription");
-    }
-  };
-
   return (
     <nav className="fixed bottom-0 w-full z-50 flex justify-around items-center h-16 pb-safe px-4 bg-[#262528]/70 backdrop-blur-3xl rounded-t-[24px] shadow-[0_-8px_32px_rgba(182,160,255,0.08)]">
       {navItems.map((item) => {
@@ -47,7 +30,6 @@ export function BottomNav() {
           <Link
             key={item.path}
             to={item.path}
-            onClick={item.path === "/studio" ? handleStudioClick : undefined}
             className={cn(
               "flex flex-col items-center justify-center transition-all active:scale-90 duration-200 p-2",
               isActive ? "text-secondary" : "text-on-surface/50 hover:bg-white/5 rounded-full",

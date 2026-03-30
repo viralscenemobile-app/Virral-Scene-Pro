@@ -25,6 +25,7 @@ export function Profile() {
   
   const userCreations = useQuery(api.creations.listByUser, userId ? { userId } : "skip" as any);
   const userTemplates = useQuery(api.creations.listTemplatesByUser, userId ? { userId } : "skip" as any);
+  const userSeries = useQuery(api.creations.listSeries, userId ? { userId } : "skip" as any);
   const bookmarkedCreations = useQuery(api.creations.listBookmarked, userId ? { userId } : "skip" as any);
   const updateUser = useMutation(api.users.update);
   const createTemplate = useMutation(api.creations.createTemplate);
@@ -34,6 +35,7 @@ export function Profile() {
     try {
       await createTemplate({
         creatorId: userId,
+        title: creation.title || creation.prompt,
         prompt: creation.prompt,
         style: creation.style,
         thumbnailUrl: creation.thumbnailUrl,
@@ -177,11 +179,11 @@ export function Profile() {
 
       {/* Content Tabs */}
       <section className="mt-10">
-        <div className="flex p-1 bg-surface-container-low rounded-xl mb-6">
+        <div className="flex p-1 bg-surface-container-low rounded-xl mb-6 overflow-x-auto no-scrollbar">
           <button 
             onClick={() => setActiveTab("creations")}
             className={cn(
-              "flex-1 py-2.5 rounded-lg text-sm font-semibold shadow-sm flex items-center justify-center gap-2 transition-all",
+              "flex-none px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm flex items-center justify-center gap-2 transition-all",
               activeTab === "creations" ? "bg-surface-container-high text-secondary" : "text-on-surface-variant hover:text-on-surface"
             )}
           >
@@ -189,9 +191,19 @@ export function Profile() {
             Creations
           </button>
           <button 
+            onClick={() => setActiveTab("series")}
+            className={cn(
+              "flex-none px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
+              activeTab === "series" ? "bg-surface-container-high text-secondary" : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            <Layers className="w-4 h-4" />
+            Series
+          </button>
+          <button 
             onClick={() => setActiveTab("templates")}
             className={cn(
-              "flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
+              "flex-none px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
               activeTab === "templates" ? "bg-surface-container-high text-secondary" : "text-on-surface-variant hover:text-on-surface"
             )}
           >
@@ -201,7 +213,7 @@ export function Profile() {
           <button 
             onClick={() => setActiveTab("bookmarks")}
             className={cn(
-              "flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
+              "flex-none px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all",
               activeTab === "bookmarks" ? "bg-surface-container-high text-secondary" : "text-on-surface-variant hover:text-on-surface"
             )}
           >
@@ -238,6 +250,32 @@ export function Profile() {
               </div>
             </div>
           ))}
+
+          {activeTab === "series" && userSeries?.map((series) => (
+            <div 
+              key={series._id} 
+              className="aspect-[9/16] rounded-lg overflow-hidden relative group cursor-pointer bg-surface-container-high flex flex-col items-center justify-center"
+              onClick={() => navigate(`/series/${series._id}`)}
+            >
+              {series.coverImageUrl ? (
+                <img src={series.coverImageUrl} alt={series.title} className="w-full h-full object-cover" />
+              ) : (
+                <Layers className="w-8 h-8 text-on-surface/20" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-3">
+                <div className="text-xs font-bold text-white truncate">{series.title}</div>
+              </div>
+            </div>
+          ))}
+
+          {activeTab === "series" && userSeries?.length === 0 && (
+            <div className="col-span-2 py-12 text-center space-y-4">
+              <div className="w-16 h-16 bg-surface-container-high rounded-full flex items-center justify-center mx-auto">
+                <Layers className="w-8 h-8 text-on-surface/20" />
+              </div>
+              <p className="font-label text-sm text-on-surface/40">No series created yet.</p>
+            </div>
+          )}
 
           {activeTab === "templates" && userTemplates?.map((template) => (
             <div 

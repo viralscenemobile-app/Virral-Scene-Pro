@@ -12,6 +12,7 @@ import { Studio } from "./screens/Studio";
 import { Discover } from "./screens/Discover";
 import { Challenges } from "./screens/Challenges";
 import { Profile } from "./screens/Profile";
+import { Series } from "./screens/Series";
 import { Subscription } from "./screens/Subscription";
 import { Auth } from "./screens/Auth";
 import { Notifications } from "./screens/Notifications";
@@ -56,7 +57,7 @@ function AppContent() {
         console.warn("App: Initialization timed out. Forcing loading to false.");
         setIsLoadingAuth(false);
       }
-    }, 3000);
+    }, 10000);
     return () => clearTimeout(timer);
   }, [isLoadingAuth]);
   const user = useQuery(api.users.getById, userId ? { id: userId } : "skip" as any);
@@ -128,6 +129,7 @@ function AppContent() {
             <Route path="/discover" element={<Discover />} />
             <Route path="/challenges" element={<Challenges />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/series/:id" element={<Series />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/subscription" element={<Subscription />} />
             <Route path="/notifications" element={<Notifications />} />

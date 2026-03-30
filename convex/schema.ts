@@ -12,7 +12,7 @@ export default defineSchema({
     coins: v.number(),
     verified: v.boolean(),
     lastRewardClaimedAt: v.optional(v.number()),
-    role: v.string(),
+    role: v.optional(v.string()),
   })
     .index("by_firebase_uid", ["firebaseUid"])
     .index("by_username", ["username"]),
@@ -30,12 +30,25 @@ export default defineSchema({
     isTemplate: v.boolean(),
     templateId: v.optional(v.id("templates")),
     challengeId: v.optional(v.id("challenges")),
+    seriesId: v.optional(v.id("series")),
+    episodeNumber: v.optional(v.number()),
   }).index("by_user", ["userId"])
     .index("by_challenge", ["challengeId"])
+    .index("by_series", ["seriesId"])
     .searchIndex("search_prompt", { searchField: "prompt" }),
+
+  series: defineTable({
+    creatorId: v.id("users"),
+    title: v.string(),
+    description: v.string(),
+    coverImageUrl: v.string(),
+    createdAt: v.number(),
+    isPublic: v.boolean(),
+  }).index("by_creator", ["creatorId"]),
 
   templates: defineTable({
     creatorId: v.id("users"),
+    title: v.optional(v.string()),
     prompt: v.string(),
     structuredPrompt: v.string(), // JSON string for camera, lighting, etc.
     style: v.string(),

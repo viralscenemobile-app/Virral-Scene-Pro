@@ -1,6 +1,17 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+export const listSeries = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("series")
+      .withIndex("by_creator", (q) => q.eq("creatorId", args.userId))
+      .order("desc")
+      .collect();
+  },
+});
+
 export const list = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -105,10 +116,15 @@ export const create = mutation({
     isTemplate: v.boolean(),
     templateId: v.optional(v.id("templates")),
     challengeId: v.optional(v.id("challenges")),
+    seriesId: v.optional(v.id("series")),
+    episodeNumber: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { seriesId, episodeNumber, ...rest } = args;
     const creationId = await ctx.db.insert("creations", {
-      ...args,
+      ...rest,
+      seriesId,
+      episodeNumber,
       title: args.title || "Untitled",
       views: 0,
       likes: 0,
@@ -178,6 +194,7 @@ export const create = mutation({
 export const createTemplate = mutation({
   args: {
     creatorId: v.id("users"),
+    title: v.optional(v.string()),
     prompt: v.string(),
     structuredPrompt: v.string(),
     style: v.string(),
@@ -230,5 +247,37 @@ export const listTemplatesByUser = query({
       .withIndex("by_creator", (q) => q.eq("creatorId", args.userId))
       .order("desc")
       .collect();
+  },
+});
+
+export const createSeries = mutation({
+  args: {
+    creatorId: v.id("users"),
+    title: v.string(),
+    description: v.string(),
+    coverImageUrl: v.string(),
+    isPublic: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("series", {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const getSeries = query({
+  args: { seriesId: v.id("series") },
+  handler: async (ctx, args) => {
+    const series = await ctx.db.get(args.seriesId);
+    if (!series) return null;
+    
+    const episodes = await ctx.db
+      .query("creations")
+      .withIndex("by_series", (q) => q.eq("seriesId", args.seriesId))
+      .order("asc")
+      .collect();
+      
+    return { ...series, episodes };
   },
 });

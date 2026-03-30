@@ -1,4 +1,4 @@
-import { Heart, MessageCircle, Bookmark, Wand2, CircleDollarSign, Share2, Plus, Sparkles, ChevronDown, Send, X, CheckCircle2 } from "lucide-react";
+import { Heart, MessageCircle, Bookmark, Wand2, CircleDollarSign, Share2, Plus, Sparkles, ChevronDown, Send, X, CheckCircle2, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -14,6 +14,7 @@ export function Feed() {
   const { userId } = useContext(UserContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get("tab") as "foryou" | "following") || "foryou";
+  const requestedId = searchParams.get("id");
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [thumbnailUrl, setThumbnailUrl] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
@@ -24,6 +25,16 @@ export function Feed() {
   );
 
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // If a specific ID was requested, try to find it in the loaded creations
+  useEffect(() => {
+    if (requestedId && creations) {
+      const index = creations.findIndex(c => c._id === requestedId);
+      if (index !== -1 && index !== currentIndex) {
+        setCurrentIndex(index);
+      }
+    }
+  }, [requestedId, creations]);
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
@@ -40,8 +51,10 @@ export function Feed() {
 
   const handleDragEnd = (_: any, info: any) => {
     if (info.offset.y < -50 && currentIndex < (creations?.length || 0) - 1) {
+      setIsLoading(true);
       setCurrentIndex(currentIndex + 1);
     } else if (info.offset.y > 50 && currentIndex > 0) {
+      setIsLoading(true);
       setCurrentIndex(currentIndex - 1);
     }
   };
@@ -224,6 +237,7 @@ export function Feed() {
         >
           <video
             src={videoUrl || undefined}
+            poster={thumbnailUrl || undefined}
             className="h-full w-full object-cover"
             autoPlay
             loop
@@ -231,12 +245,12 @@ export function Feed() {
             onLoadedData={() => setIsLoading(false)}
           />
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
-              {thumbnailUrl ? (
-                <img src={thumbnailUrl} alt="Thumbnail" className="absolute inset-0 w-full h-full object-cover opacity-50" />
-              ) : (
-                <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full" />
-              )}
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm z-10">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full border-4 border-primary/20 animate-pulse" />
+                <Loader2 className="w-12 h-12 text-primary animate-spin relative z-10" />
+              </div>
+              <p className="mt-4 text-[10px] font-headline font-bold text-white tracking-[0.2em] uppercase opacity-50">Loading Scene</p>
             </div>
           )}
           <div className="video-gradient-overlay absolute inset-0" />

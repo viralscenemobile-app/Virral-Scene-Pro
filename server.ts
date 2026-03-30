@@ -23,6 +23,9 @@ async function startServer() {
     next();
   });
 
+  // Serve static files from public folder explicitly
+  app.use(express.static(path.join(process.cwd(), "public")));
+
   // R2 Client Setup
   console.log("Checking R2 configuration...");
   console.log("VITE_R2_BUCKET_NAME:", !!process.env.VITE_R2_BUCKET_NAME);
@@ -108,17 +111,12 @@ async function startServer() {
     }
   });
 
-  // Global error handler
-  app.use((err: any, req: any, res: any, next: any) => {
-    console.error("Global error handler:", err);
-    res.status(500).json({ error: "Internal server error" });
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
+      root: process.cwd(),
     });
     app.use(vite.middlewares);
   } else {
@@ -128,6 +126,12 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Global error handler - should be at the end
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Global error handler:", err);
+    res.status(500).json({ error: "Internal server error" });
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

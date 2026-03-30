@@ -171,7 +171,9 @@ export function Discover() {
                     </div>
                   </div>
                 </div>
-                <p className="text-[10px] font-medium text-on-surface-variant truncate px-1">{template.prompt}</p>
+                <p className="text-[10px] font-medium text-on-surface-variant truncate px-1">
+                  {template.title || (template.prompt === "Direct Upload" ? "Custom Creation" : template.prompt)}
+                </p>
               </div>
             ))}
             {!templates && (
@@ -295,7 +297,7 @@ export function Discover() {
                     <span className="text-[10px] font-label font-bold text-on-surface">{(creation.views / 1000).toFixed(1)}K</span>
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black to-transparent">
-                    <p className="text-xs font-medium text-on-surface truncate">{creation.prompt}</p>
+                    <p className="text-xs font-medium text-on-surface truncate">{creation.title || creation.prompt}</p>
                   </div>
                 </div>
               ))}
